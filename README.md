@@ -1,21 +1,14 @@
 # Handwriting words recognition with TensorFlow
 Create a captcha-to-text solution with step-by-step instructions for installing packages, preprocessing data, defining the model architecture, and more.
 
-[In the previous tutorial](https://pylessons.com/tensorflow-ocr-captcha), I showed you how to build a custom TensorFlow model to extract text from captcha images. Step by step, tutorial by tutorial, I am going to more complex things. This tutorial will extend previous tutorials to this one, using [IAM Dataset](https://fki.tic.heia-fr.ch/databases/iam-handwriting-database), which has variable length ground-truth targets.
+The data set for this project can be downloaded from this link [IAM Dataset](https://fki.tic.heia-fr.ch/databases/iam-handwriting-database), which has variable length ground-truth targets.
 
-Each sample in this Dataset consists of an image of handwritten text, and the corresponding target is the text string in the image. The IAM dataset is widely used as a benchmark for OCR systems, so this example can be a useful starting point for building your own OCR system.
+Each sample in this Dataset consists of an image of handwritten text, and the corresponding target is the text string in the image. The IAM dataset is widely used as a benchmark for OCR systems.
 
-Handwriting recognition is the process of converting handwritten text into machine-readable text. This technology is widely used in various applications, such as scanning documents, recognizing handwritten notes, and reading handwritten forms, including document digitization, handwriting analysis, and automated grading of exams. One way to approach handwriting recognition is by using a Connectionist Temporal Classification (CTC) loss function, as we used in previous tutorials.
-
-## Prerequisites:
-Before we begin, you will need to have the following software installed:
-
-- Python 3;
-- TensorFlow (We will be using version 2.10 in this tutorial);
-- mltu==0.1.5
+Handwriting recognition is the process of converting handwritten text into machine-readable text. This technology is widely used in various applications, such as scanning documents, recognizing handwritten notes, and reading handwritten forms, including document digitization, handwriting analysis, and automated grading of exams. One way to approach handwriting recognition is by using a Connectionist Temporal Classification (CTC) loss function.
 
 ## Dataset collection and preprocessing:
-To simplify all things with dataset downloads and extraction, I wrote a code to do these things for us:
+To simplify all things with dataset downloads and extraction, the code for extracting data is also there in the train.py :
 ```python
 import stow
 import tarfile
@@ -45,32 +38,7 @@ if not stow.exists(dataset_path):
 
 This code downloads and unzips a file from [https://git.io/J0fjL](https://git.io/J0fjL) URL and extracts the .tgz file to a specified "Datasets/IAM_Words" directory. Then this file is extracted into the same path, the 'words' directory. 
 
-To understand this Dataset, you can open the "Datasets/IAM_Words/words.txt" annotation file where the following description is given for us:
-
-```text
-#--- words.txt ---------------------------------------------------------------#
-#
-# iam database word information
-#
-# format: a01-000u-00-00 ok 154 1 408 768 27 51 AT A
-#
-#     a01-000u-00-00  -> word id for line 00 in form a01-000u
-#     ok              -> result of word segmentation
-#                            ok: word was correctly
-#                            er: segmentation of word can be bad
-#
-#     154             -> graylevel to binarize the line containing this word
-#     1               -> number of components for this word
-#     408 768 27 51   -> bounding box around this word in x,y,w,h format
-#     AT              -> the grammatical tag for this word, see the
-#                        file tagset.txt for an explanation
-#     A               -> the transcription for this word
-#
-a01-000u-00-00 ok 154 408 768 27 51 AT A
-a01-000u-00-01 ok 154 507 766 213 48 NN MOVE
-```
-
-It doesn't matter what dataset you use; we always need to preprocess it in one way or another. I wrote a script to collect image paths and labels of each image in our dataset:
+It doesn't matter what dataset you use; we always need to preprocess it in one way or another. Below is the script to collect image paths and labels of each image in our dataset:
 
 ```python
 dataset, vocab, max_len = [], set(), 0
@@ -109,9 +77,6 @@ The code reads the file line by line and does the following for each line:
 4. It constructs the file path by joining the dataset_path with the extracted folder names and file names;
 5. If the file path does not exist, it skips the line;
 6. Otherwise, it adds the file path and label to the dataset list and updates the vocab set with the list of characters in the label. It also updates max_len to be the maximum of its current value and the length of the label.
-
-We can take a look at a few examples from our dataset:
-![alt image](https://pylessons.com/media/Tutorials/TensorFlow-CAPTCHA-solver/handwriting-recognition/True_label.png)
 
 ```python
 # Create a ModelConfigs object to store model configurations
@@ -155,50 +120,9 @@ model.summary(line_length=110)
 
 The **train_model** function is defined in the model.py file and is responsible for building and compiling the model and training it on the input data.
 
-The model in this tutorial is designed to recognize handwritten text in images. It's a type of CNN (convolutional neural network) designed explicitly for sequence labeling tasks like this. The model takes images as input and produces a sequence of labels (character labels) for each image as output.
+The model in this project is designed to recognize handwritten text in images. It's a type of CNN (convolutional neural network) designed explicitly for sequence labeling tasks like this. The model takes images as input and produces a sequence of labels (character labels) for each image as output.
 
 The model is made up of several convolutional and max-pooling layers that extract features from the images and a couple of bidirectional LSTM (long short-term memory) layers that capture the relationships between the characters in the labels. The output from the LSTM layers is passed through a dense layer with a softmax activation, which produces a probability distribution over the characters in the vocabulary for each time step. This helps the model predict the correct label for each character in the input image.
-
-But if you need more details, here is a script for this train_model function:
-
-```python
-# model.py
-from keras import layers
-from keras.models import Model
-
-from mltu.model_utils import residual_block
-
-def train_model(input_dim, output_dim, activation='leaky_relu', dropout=0.2):
-    
-    inputs = layers.Input(shape=input_dim, name="input")
-
-    # normalize images here instead in preprocessing step
-    input = layers.Lambda(lambda x: x / 255)(inputs)
-
-    x1 = residual_block(input, 16, activation=activation, skip_conv=True, strides=1, dropout=dropout)
-
-    x2 = residual_block(x1, 16, activation=activation, skip_conv=True, strides=2, dropout=dropout)
-    x3 = residual_block(x2, 16, activation=activation, skip_conv=False, strides=1, dropout=dropout)
-
-    x4 = residual_block(x3, 32, activation=activation, skip_conv=True, strides=2, dropout=dropout)
-    x5 = residual_block(x4, 32, activation=activation, skip_conv=False, strides=1, dropout=dropout)
-
-    x6 = residual_block(x5, 64, activation=activation, skip_conv=True, strides=2, dropout=dropout)
-    x7 = residual_block(x6, 64, activation=activation, skip_conv=True, strides=1, dropout=dropout)
-
-    x8 = residual_block(x7, 64, activation=activation, skip_conv=False, strides=1, dropout=dropout)
-    x9 = residual_block(x8, 64, activation=activation, skip_conv=False, strides=1, dropout=dropout)
-
-    squeezed = layers.Reshape((x9.shape[-3] * x9.shape[-2], x9.shape[-1]))(x9)
-
-    blstm = layers.Bidirectional(layers.LSTM(128, return_sequences=True))(squeezed)
-    blstm = layers.Dropout(dropout)(blstm)
-
-    output = layers.Dense(output_dim + 1, activation='softmax', name="output")(blstm)
-
-    model = Model(inputs=inputs, outputs=output)
-    return model
-```
 
 The model is trained using the CTC loss and the Adam optimizer. The CTC loss is a common choice for sequence labeling tasks because it allows the model to output a sequence of character labels without enforcing an alignment between the input and output sequences. This is useful because the order and length of the characters in the input images may not match the order and length of the labels. The Adam optimizer is a gradient-based optimizer that adaptively adjusts the learning rates of the model's parameters based on the historical gradient information.
 
@@ -239,14 +163,12 @@ Now we can analyze how the model was trained. Let's open TensorBoard and look at
 
 ![alt image](https://pylessons.com/media/Tutorials/TensorFlow-CAPTCHA-solver/handwriting-recognition/03_HWR_CER.png)
 
-And from the graph above, we can clearly see these abnormal spikes. There might be many reasons, but I mostly blame the learning rate and data. As I told you, there are dots and commas that might be very hard to recognize when they are resized. This may cause the issue. But overall, 7% CER is a great result, knowing that if we would clean up our data and optimize the model, we could get even better results!
-
-![alt image](https://pylessons.com/media/Tutorials/TensorFlow-CAPTCHA-solver/handwriting-recognition/03_HWR_WER.png)
-
+And from the graph above, we can clearly see these abnormal spikes. There might be many reasons, this might be due to learning rate and data. As it is mentioned, there are dots and commas that might be very hard to recognize when they are resized. This may cause the issue. But overall, 7% CER is a great result, knowing that if we would clean up our data and optimize the model, we could get even better results!
+ 
 Usually, if CER is not perfect, we can't expect Word Error Rate to be better. It represents CER but at a word level.
 
 ## Test the trained model:
-We all know that all we want that our model would perform well on data it has never seen. So, to test our trained model, we'll run it on our validation data and see how well it works. The same as before, I wrote a short script to iterate the whole validation dataset with our ONNX model:
+We all know that all we want that our model would perform well on data it has never seen. So, to test our trained model, we'll run it on our validation data and see how well it works. Here is a short script to iterate the whole validation dataset with our ONNX model:
 
 ```python
 # inferenceModel.py
@@ -304,10 +226,6 @@ When it finished, we received the following results:
 
 That means our model, 6% of characters, predicts wrong.
 
-Let's take a look at a few examples of how our model predicted them:
-
-![alt image](https://pylessons.com/media/Tutorials/TensorFlow-CAPTCHA-solver/handwriting-recognition/Prediction.png)
-
 There are a few ways we could improve the performance of this model without changing the code:
 
 - We could try fine-tuning the model by training it on a larger dataset or a more similar dataset to the validation data. This may help the model learn to generalize and perform better on unseen data;
@@ -318,8 +236,6 @@ There are a few ways we could improve the performance of this model without chan
 It's also worth noting that a CER (character error rate) of 6% may be okay, depending on the specific task and the quality of the validation data. The model is already performing quite well, and further improvements may not be possible without changing the code.
 
 # Conclusion:
-This tutorial taught us how to build a handwriting recognition model using TensorFlow and the IAM dataset. We started by collecting and preprocessing the Dataset, including reading and parsing the "words.txt" annotation file and applying transformations such as image resizing and label padding to prepare the data for training. We then defined our model architecture using a CNN with LSTM layers and a CTC loss function and trained the model using the fit() method, monitoring its progress using TensorBoard. Finally, we tested the trained model on a small sample of the test dataset and saved it for future use.
+This project tells us how to build a handwriting recognition model using TensorFlow and the IAM dataset. We started by collecting and preprocessing the Dataset, including reading and parsing the "words.txt" annotation file and applying transformations such as image resizing and label padding to prepare the data for training. We then defined our model architecture using a CNN with LSTM layers and a CTC loss function and trained the model using the fit() method, monitoring its progress using TensorBoard. Finally, we tested the trained model on a small sample of the test dataset and saved it for future use.
 
-This tutorial provided a good starting point for building an OCR system using TensorFlow. We covered the basics of collecting and preprocessing the Dataset, defining the model architecture, and training and evaluating the model. To improve the performance of our model, we could try fine-tuning the hyperparameters, using a different dataset or augmenting the data, testing a different model architecture, or incorporating additional features. We can continue to build and improve our handwriting recognition model with these techniques.
-
-The trained model can be downloaded from [this link](https://drive.google.com/drive/folders/1sehMZh37m-XwllkPi4WK2EqlAzGbte7o?usp=sharing).
+  
